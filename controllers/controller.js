@@ -1,31 +1,16 @@
 const User = require("../models/model");
+const Token = require("../models/token");
 const brcpt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-
-const getUsers = async (req, res) => {
-  try {
-    const users = await User.find().lean();
-    res.status(200).json(users);
-  } catch (error) {
-    res.status(500).json(error);
-  }
-};
+const generateToken = require('./generateToken');
 
 const getUser = async (req, res) => {
   try {
-    const searhedUser = await User.findOne({ name: req.params.name });
+    const searhedUser = await User.findOne({ username: req.params.name });
+    console.log(searhedUser);
     res.status(200).json(searhedUser);
   } catch (error) {
-    res.status(500).json(error);
-  }
-};
-
-const addUser = async (req,res) => {
-  try {
-    const newUser = await new User({ username: req.body.username, title: req.body.title }); // user object oluşturulur
-    const createdUser = await newUser.save(); // oluşturulan object veritabanına kaydedilir.
-    res.status(201).json({ status: true, message: createdUser });
-  } catch (error) {
+    console.log(error);
     res.status(500).json(error);
   }
 };
@@ -35,14 +20,14 @@ const createUser = async (req, res) => {
     const salt = await brcpt.genSalt();
     const hashedPassword = await brcpt.hash(req.body.password, salt);
 
-    console.log(req.body.name);
+    console.log(req.body.username);
     console.log(req.body.password);
     console.log(hashedPassword);
 
     /*shemadan "user" objesi oluşturup, oluşturulan objeye post edilen body değişkenlerine atmak hata almamızı
       engeller. Bunun için; */
-    const newUser = await new User({ name: req.body.name, password: hashedPassword }); // user object oluşturulur
-    const createdUser = await newUser.save(); // oluşturulan object veritabanına kaydedilir.
+    const newUser = await new User({ username: req.body.username, password: req.body.password, hashedpassword: hashedPassword }); // user object oluşturulur
+    const createdUser = await newUser.save(); // oluşturulan object, veritabanına kaydedilir.
     res.status(201).json({ status: true, message: createdUser });
 
   } catch (error) {
@@ -51,28 +36,36 @@ const createUser = async (req, res) => {
 };
 
 const login = async (req, res) => {
-  const users = await User.find();
-  const loginingUser = users.find(user => user.name === req.body.name);
+
+  const users = await User.find(); // tüm userlar "users" değişkenine atanır.
+  const loginingUser = users.find(user => user.username === req.body.username);
 
   if (loginingUser == null) {
-    console.log('cannot find user');
+
     return res.status(400).send('cannot find user');
   }
   try {
-    if (await brcpt.compare(req.body.password, loginingUser.password)) {
+    if (await brcpt.compare(req.body.password, loginingUser.hashedpassword)) {
 
-      //Eğer password doğruysa token oluşturulur
-      const secretKey = process.env.api_secret_key // Kullanılacak secret key environment değişkeninden alınır
-      const { name, password } = req.body; // login esnasında kullanılan username ve şifre değişkene atanır
-      const payLoad = { name, password }; // bu username ve şifre payload olarak ayarlanır
-      const token = jwt.sign(payLoad, secretKey, { expiresIn: 120 /*dk*/ }); // TOKEN'IN OLUŞTUĞU KOD
-      console.log('Success');
+      const { username, password } = req.body; // login esnasında kullanılan username ve şifre değişkene atanır
+      const payLoad = { username, password }; // bu username ve şifre payload olarak ayarlanır
+
+      const accessToken = generateToken.generateAccessToken(payLoad);
+      const refreshToken = generateToken.generateRefreshToken(payLoad);
+
+      const newToken = await new Token({ accessToken: accessToken, refreshToken: refreshToken }).save();
+
+      console.log('accessToken: ', newToken.accessToken, ' is Successfully created');
+      console.log('refreshToken: ', newToken.refreshToken, ' is Successfully created.');
+
       res.status(201).json({
         status: true,
-        name,
+        username,
         password,
-        token
+        accessToken: newToken.accessToken,
+        refreshToken: newToken.refreshToken
       });
+
     } else {
       console.log('Not Allowed');
       res.send('Not Allowed');
@@ -82,22 +75,54 @@ const login = async (req, res) => {
   }
 };
 
+const refreshToken = async (req, res) => {
+  console.log(req.body.token);
+  const tokens = await Token.find().lean(); // Tüm token kayırları veritabanından çekilir.
+  const searchedToken = tokens.find(token => token.refreshToken === req.body.refreshToken); // Çekilen kayıtlar arasında bizim tokenimiz var ise DOCUMENT OLARAK alınır.
+  console.log(searchedToken);
+
+  // console.log(refreshToken); // DOKUMENT olarak alınan token ın Ekran Çıktısı. Document olduğu için token'a token.token ile ulaşılır.
+  if (searchedToken == null) return res.sendStatus(401);
+  if (!searchedToken) return res.sendStatus(403);
+  jwt.verify(searchedToken.refreshToken, process.env.refresh_key, (err, payLoad) => {
+    if (err) return res.sendStatus(403);
+    //const accessToken = generateToken.generateAccessToken(payLoad);
+    //res.json({accessToken: accessToken});
+    console.log(payLoad);
+    res.status(201).json(payLoad);
+  }
+  );
+}
+
+const logout = async (req, res) => {
+  const tokens = await Token.find().lean(); // Tüm token kayırları veritabanından çekilir.
+  const searchedToken = tokens.find(token => token.refreshToken === req.body.token);
+
+  if (searchedToken == null) return res.sendStatus(403);
+  if (searchedToken.refreshToken == req.body.token) {
+    const deletedToken = await Token.deleteOne(searchedToken);
+    console.log(deletedToken, ' is deleted');
+    } return res.send('Logged out - Çıkış yapıldı');
+
+}
+
 const deleteUser = async (req, res) => {
   try {
-    const searhedUser = await User.findOne({ name: req.params.name });
+    console.log(req.body.token);
+    const searhedUser = await User.findOne({ name: req.params.token });
     console.log(searhedUser.name, ' is deleted');
     const deletedUser = await User.deleteOne(searhedUser);
-    res.status(200).json(deletedUser);
+    res.status(201).json(deletedUser);
   } catch (error) {
     res.status(500).json(error);
   }
 };
 
 module.exports = {
-  getUsers,
-  getUser,
-  addUser,
   createUser,
   login,
   deleteUser,
+  getUser,
+  refreshToken,
+  logout
 };

@@ -20,15 +20,14 @@ const createUser = async (req, res) => {
     const salt = await brcpt.genSalt();
     const hashedPassword = await brcpt.hash(req.body.password, salt);
 
-    console.log(req.body.username);
-    console.log(req.body.password);
-    console.log(hashedPassword);
+    console.log("username: ", req.body.username);
+    console.log("password: ", req.body.password);
+    console.log("hashedPasword: ",hashedPassword);
 
-    /*shemadan "user" objesi oluşturup, oluşturulan objeye post edilen body değişkenlerine atmak hata almamızı
-      engeller. Bunun için; */
+    /*models klasöründen "user" objesi oluşturup, oluşturulan objeye post methodu ile iletilen body değişkenleri atanır. Bunun için; */
     const newUser = await new User({ username: req.body.username, password: req.body.password, hashedpassword: hashedPassword }); // user object oluşturulur
-    const createdUser = await newUser.save(); // oluşturulan object, veritabanına kaydedilir.
-    res.status(201).json({ status: true, message: createdUser });
+    const createdUser = await newUser.save(); // oluşturulan object, veritabanına KAYDEDİLİR.
+    res.status(201).json({ status: true, message: createdUser }); // Oluşturulan user ekrana status kodu ile gönderilir.
 
   } catch (error) {
     res.status(500).json(error);
@@ -106,22 +105,9 @@ const logout = async (req, res) => {
 
 }
 
-const deleteUser = async (req, res) => {
-  try {
-    console.log(req.body.token);
-    const searhedUser = await User.findOne({ name: req.params.token });
-    console.log(searhedUser.name, ' is deleted');
-    const deletedUser = await User.deleteOne(searhedUser);
-    res.status(201).json(deletedUser);
-  } catch (error) {
-    res.status(500).json(error);
-  }
-};
-
 module.exports = {
   createUser,
   login,
-  deleteUser,
   getUser,
   refreshToken,
   logout

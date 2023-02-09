@@ -3,7 +3,6 @@ const authToken = require("../middleware/authToken");
 const {
   createUser,
   login,
-  deleteUser,
   getUser,
   refreshToken,
   logout
@@ -18,8 +17,6 @@ router.get("/users/:name",authToken, getUser);
 router.post("/createUser", createUser);
 
 router.post("/login",login);
-
-router.delete("/users/:name", deleteUser);
 
 router.post("/token", refreshToken);
 
